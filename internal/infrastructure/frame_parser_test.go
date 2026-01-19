@@ -21,7 +21,7 @@ func TestProperty_FrameHeaderParsingCorrectness(t *testing.T) {
 	properties := gopter.NewProperties(parameters)
 
 	properties.Property("parsing frame header extracts all fields correctly", prop.ForAll(
-		func(fin bool, rsv1 bool, rsv2 bool, rsv3 bool, opcodeIdx int, masked bool, payloadLen uint64) bool {
+		func(fin bool, opcodeIdx int, masked bool, payloadLen uint64) bool {
 			// Only test valid opcodes
 			validOpcodes := []domain.Opcode{
 				domain.OpcodeContinuation,
@@ -33,6 +33,11 @@ func TestProperty_FrameHeaderParsingCorrectness(t *testing.T) {
 			}
 			frameOpcode := validOpcodes[opcodeIdx]
 
+			// Control frames must not be fragmented (FIN must be 1)
+			if frameOpcode.IsControl() && !fin {
+				fin = true
+			}
+
 			// Control frames must have payload <= 125
 			if frameOpcode.IsControl() && payloadLen > 125 {
 				payloadLen = 125
@@ -42,6 +47,9 @@ func TestProperty_FrameHeaderParsingCorrectness(t *testing.T) {
 			if payloadLen > 1000 {
 				payloadLen = 1000
 			}
+
+			// Reserved bits must be false for valid frames (no extensions negotiated)
+			rsv1, rsv2, rsv3 := false, false, false
 
 			// Build frame bytes manually
 			var buf bytes.Buffer
@@ -155,9 +163,6 @@ func TestProperty_FrameHeaderParsingCorrectness(t *testing.T) {
 			return true
 		},
 		gen.Bool(),                 // fin
-		gen.Bool(),                 // rsv1
-		gen.Bool(),                 // rsv2
-		gen.Bool(),                 // rsv3
 		gen.IntRange(0, 5),         // opcodeIdx
 		gen.Bool(),                 // masked
 		gen.UInt64Range(0, 100000), // payloadLen
